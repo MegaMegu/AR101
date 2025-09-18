@@ -62,6 +62,8 @@ void loop() {
   HTTPClient https;
   if (https.begin(client, url)) {
     https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+     https.setTimeout(10000); 
     
     int httpCode = https.GET();
     
