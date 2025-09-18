@@ -10,7 +10,7 @@
 const char* ssid = "GFiber_2.4_Coverage_6595C";
 const char* password = "BE574178";
 
-const char* serverName = "https://script.google.com/macros/s/AKfycbwj7wnx5Jga_-GEs8XPX7dhl8MXrPjyKNtXXe9zm5NyqCqJjJRqepPkIMkotf3ZUm8/exec";
+const char* serverName = "https://script.google.com/macros/s/AKfycbyIcMoIE_ZbEABsjswjcsqFfVqAO2dxKcmwNm88S7e_iC4DrQ70ZM15mCTpKgCb02rR/exec";
 
 // =========================================================================
 // Pin definitions (use NodeMCU D# labels)
@@ -57,11 +57,11 @@ void setup() {
   delay(100);
   Serial.println("RFID ready. Tap card.");
   lcd.setCursor(0, 1);
-  lcd.print("RFID Ready...");
+  lcd.print("Ready, Tap card.");
 }
 
 void loop() {
-  if ( ! mfrc522.PICC_IsNewCardPresent() || ! mfrc522.PICC_ReadCardSerial()) {
+  if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
     return;
   }
   
@@ -96,10 +96,28 @@ void loop() {
       Serial.println(payload);
 
       lcd.clear();
+
+      // Split payload by "|"
+      int sepIndex = payload.indexOf('|');
+      if (sepIndex != -1) {
+        String line1 = payload.substring(0, sepIndex);
+        String line2 = payload.substring(sepIndex + 1);
+
+        lcd.setCursor(0, 0);
+        lcd.print(line1.substring(0, 16));
+        lcd.setCursor(0, 1);
+        lcd.print(line2.substring(0, 16));
+      } else {
+        lcd.setCursor(0, 0);
+        lcd.print(payload.substring(0, 16));
+      }
+
+      // ⏳ Show reply for 3 seconds, then reset
+      delay(3000);
+      lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Server Reply:");
-      lcd.setCursor(0, 1);
-      lcd.print(payload.substring(0,16)); // Only first 16 chars fit
+      lcd.print("Ready, Tap card.");
+
     } else {
       Serial.print("HTTP GET failed, error: ");
       Serial.println(https.errorToString(httpCode));
@@ -109,6 +127,11 @@ void loop() {
       lcd.print("HTTP Error");
       lcd.setCursor(0, 1);
       lcd.print(https.errorToString(httpCode));
+
+      delay(3000);
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Ready, Tap card.");
     }
     https.end();
   }
@@ -134,10 +157,10 @@ String urlEncode(const String &str) {
   char c;
   const char *p = str.c_str();
   while ((c = *p++)) {
-    if ( (c >= '0' && c <= '9') ||
-         (c >= 'A' && c <= 'Z') ||
-         (c >= 'a' && c <= 'z') ||
-         c == '-' || c == '_' || c == '.' || c == '~') {
+    if ((c >= '0' && c <= '9') ||
+        (c >= 'A' && c <= 'Z') ||
+        (c >= 'a' && c <= 'z') ||
+        c == '-' || c == '_' || c == '.' || c == '~') {
       encoded += c;
     } else {
       char buf[5];
