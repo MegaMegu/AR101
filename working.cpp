@@ -16,6 +16,7 @@ const char* serverName = "https://script.google.com/macros/s/AKfycbyIcMoIE_ZbEAB
 // Pin definitions (use NodeMCU D# labels)
 #define RST_PIN D4
 #define SS_PIN D8
+#define BUZZER_PIN D0   // 🔔 Buzzer pin
 
 // Objects
 MFRC522 mfrc522(SS_PIN, RST_PIN);
@@ -34,6 +35,10 @@ void setup() {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Booting...");
+
+  // Buzzer setup
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
 
   // WiFi
   WiFi.mode(WIFI_STA);
@@ -65,15 +70,18 @@ void loop() {
     return;
   }
   
+  // 🔔 Short beep when card is detected
+  beep(200);
+
   String uidStr = uidToString(mfrc522.uid);
   Serial.print("Card UID: ");
   Serial.println(uidStr);
 
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Card UID:");
+  lcd.print("Hello  Student");
   lcd.setCursor(0, 1);
-  lcd.print(uidStr);
+  lcd.print("Please wait");
 
   // Build URL
   String url = String(serverName) + "?cardUID=" + urlEncode(uidStr);
@@ -96,6 +104,9 @@ void loop() {
       Serial.println(payload);
 
       lcd.clear();
+
+      // 🔔 Success beep
+      beep(500);
 
       // Split payload by "|"
       int sepIndex = payload.indexOf('|');
@@ -127,6 +138,12 @@ void loop() {
       lcd.print("HTTP Error");
       lcd.setCursor(0, 1);
       lcd.print(https.errorToString(httpCode));
+
+      // 🔔 Error tone (3 short beeps)
+      for (int i = 0; i < 3; i++) {
+        beep(150);
+        delay(150);
+      }
 
       delay(3000);
       lcd.clear();
@@ -169,4 +186,11 @@ String urlEncode(const String &str) {
     }
   }
   return encoded;
+}
+
+// 🔔 Buzzer helper
+void beep(int duration) {
+  digitalWrite(BUZZER_PIN, HIGH);
+  delay(duration);
+  digitalWrite(BUZZER_PIN, LOW);
 }
