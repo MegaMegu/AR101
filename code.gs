@@ -1,31 +1,40 @@
-// 📌 CONFIG
+// =========================================================
+// 📌 CONFIGURATION
+// =========================================================
 var ss = SpreadsheetApp.getActiveSpreadsheet();
 var timezone = "Asia/Manila";
 
-// SHEET NAMES
+// SHEET REFERENCES
 var managerSheet = ss.getSheetByName("Classes");
 var studentSheet = ss.getSheetByName("Students");
 var enrollmentSheet = ss.getSheetByName("Enrollment");
 
 // =========================================================
 // 🚪 Handle GET request from ESP8266
-// Example: ?studentID=1001  OR  ?cardUID=A1B2C3D4
 // =========================================================
 function doGet(e) {
   var studentID, studentName;
 
-  // ✅ Accept either StudentID or CardUID
+  // ✅ Handle either StudentID or CardUID
   if (e.parameter.studentID) {
     studentID = String(e.parameter.studentID).trim();
     studentName = getStudentName(studentID);
+
   } else if (e.parameter.cardUID) {
-    studentID = getStudentIdByCard(String(e.parameter.cardUID).trim());
+    // Normalize UID (trim + uppercase)
+    var rawUID = String(e.parameter.cardUID).trim().toUpperCase();
+    Logger.log("🔍 Scanned UID: " + rawUID);
+
+    // Try to find matching StudentID
+    studentID = getStudentIdByCard(rawUID);
     if (studentID) {
       studentName = getStudentName(studentID);
     }
   }
 
+  // ❌ Not found
   if (!studentID || !studentName) {
+    Logger.log("⚠️ Student not found for UID/ID: " + (e.parameter.cardUID || e.parameter.studentID));
     return ContentService.createTextOutput("Student not found");
   }
 
@@ -33,44 +42,46 @@ function doGet(e) {
   var currDate = Utilities.formatDate(now, timezone, "yyyy-MM-dd");
   var currTime = Utilities.formatDate(now, timezone, "HH:mm:ss");
 
-  // ✅ Find the active class automatically
+  // ✅ Find the active class
   var classInfo = findActiveClass(now);
   if (!classInfo) {
+    Logger.log("⚠️ No active class found right now");
     return ContentService.createTextOutput("No active class|found right now");
   }
 
   // ✅ Check if student is enrolled in this class
   if (!isStudentEnrolled(studentID, classInfo.classID)) {
+    Logger.log("⚠️ " + studentName + " not enrolled in " + classInfo.classID);
     return ContentService.createTextOutput("You are not part|of this class");
   }
 
-  // Determine attendance status
+  // ✅ Determine attendance status
   var status = getAttendanceStatus(now, classInfo.start, classInfo.grace);
 
-  // ✅ Daily sheet name → ClassName_yyyy-MM-dd
+  // ✅ Log to daily sheet
   var sheetName = classInfo.className + "_" + currDate;
   var classSheet = ss.getSheetByName(sheetName);
   if (!classSheet) {
     classSheet = createDailyAttendanceSheet(classInfo, currDate);
   }
 
-  // Log attendance in daily sheet
+  // ✅ Update attendance row
   var data = classSheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === studentID) {
-      classSheet.getRange(i + 1, 3).setValue(currTime);  // Time
-      classSheet.getRange(i + 1, 4).setValue(status);    // Status
+      classSheet.getRange(i + 1, 3).setValue(currTime);
+      classSheet.getRange(i + 1, 4).setValue(status);
+      Logger.log("🕒 Marked " + studentName + " as " + status + " at " + currTime);
       break;
     }
   }
 
-  return ContentService.createTextOutput(
-  studentName + "|" + status
-  );
+  return ContentService.createTextOutput(studentName + "|" + status);
 }
 
+
 // =========================================================
-// 🔍 Find active class
+// 🔍 Find Active Class
 // =========================================================
 function findActiveClass(now) {
   var classes = managerSheet.getDataRange().getValues();
@@ -101,7 +112,7 @@ function findActiveClass(now) {
 }
 
 // =========================================================
-// ⏰ Attendance status
+// ⏰ Determine Attendance Status
 // =========================================================
 function getAttendanceStatus(now, startTime, graceMinutes) {
   var graceLimit = new Date(startTime.getTime() + graceMinutes * 60000);
@@ -109,33 +120,36 @@ function getAttendanceStatus(now, startTime, graceMinutes) {
 }
 
 // =========================================================
-// 📊 Lookup student name
+// 📊 Lookup Student Name
 // =========================================================
 function getStudentName(studentID) {
   var data = studentSheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === String(studentID).trim()) {
-      return data[i][1]; // StudentName
+      return data[i][1];
     }
   }
   return null;
 }
 
 // =========================================================
-// 🔍 Lookup student by CardUID → StudentID
+// 🔍 Lookup Student by CardUID → StudentID
 // =========================================================
 function getStudentIdByCard(cardUID) {
   var data = studentSheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][2]).trim() === cardUID) { // Column C = CardUID
-      return data[i][0]; // return StudentID
+    var sheetUID = String(data[i][2]).trim().toUpperCase();
+    if (sheetUID === cardUID) {
+      Logger.log("✅ Match found: " + sheetUID);
+      return data[i][0]; // StudentID
     }
   }
+  Logger.log("❌ No match for: " + cardUID);
   return null;
 }
 
 // =========================================================
-// ✅ Check if student is enrolled in a class
+// ✅ Check Enrollment
 // =========================================================
 function isStudentEnrolled(studentID, classID) {
   if (!enrollmentSheet) return false;
@@ -149,7 +163,7 @@ function isStudentEnrolled(studentID, classID) {
 }
 
 // =========================================================
-// 🕒 Helper: parse StartTime/EndTime
+// 🕒 Parse Time
 // =========================================================
 function parseTime(baseDate, cellValue) {
   if (!cellValue) return null;
@@ -199,18 +213,29 @@ function createDailyAttendanceSheet(classInfo, dateStr) {
 }
 
 // =========================================================
-// 📧 Email Attendance Report
+// 📧 Manual Attendance Report Sender
 // =========================================================
 function sendAttendanceReport() {
   var data = managerSheet.getDataRange().getValues();
   var today = Utilities.formatDate(new Date(), timezone, "yyyy-MM-dd");
+  Logger.log("📅 Today: " + today);
 
   for (var i = 1; i < data.length; i++) {
     var className = data[i][1];
     var email = data[i][6];
     var sheetName = className + "_" + today;
+    Logger.log("➡️ Checking " + sheetName + " for " + email);
+
+    if (!email || !email.includes("@")) {
+      Logger.log("⚠️ Invalid or missing email for " + className);
+      continue;
+    }
+
     var classSheet = ss.getSheetByName(sheetName);
-    if (!classSheet) continue;
+    if (!classSheet) {
+      Logger.log("❌ No sheet found for " + sheetName);
+      continue;
+    }
 
     var csvFile = convertSheetToCsv(classSheet);
     MailApp.sendEmail({
@@ -223,13 +248,75 @@ function sendAttendanceReport() {
         mimeType: "text/csv"
       }]
     });
+
+    Logger.log("✅ Email sent to " + email + " for " + className);
   }
 }
 
+
 // =========================================================
-// 📝 Convert sheet to CSV
+// 📝 Convert Sheet to CSV
 // =========================================================
 function convertSheetToCsv(sheet) {
   var data = sheet.getDataRange().getValues();
-  return data.map(r => r.join(",")).join("\n");
+  var csvRows = data.map(row => row.map(cell => {
+    if (cell instanceof Date) {
+      // Format as 12-hour time with AM/PM
+      return Utilities.formatDate(cell, Session.getScriptTimeZone(), "hh:mm:ss a");
+    } else if (typeof cell === "string" && cell.includes(",")) {
+      // Quote text containing commas
+      return `"${cell}"`;
+    } else {
+      return cell;
+    }
+  }).join(","));
+  return csvRows.join("\n");
+}
+
+// =========================================================
+// ⚙️ AUTO SEND AFTER CLASS
+// =========================================================
+function autoSendAttendanceReports() {
+  var now = new Date();
+  var today = Utilities.formatDate(now, timezone, "yyyy-MM-dd");
+  var classes = managerSheet.getDataRange().getValues();
+
+  for (var i = 1; i < classes.length; i++) {
+    var [classID, className, startTime, endTime, days, prof, email, grace, lastSent] = classes[i];
+    if (!className || !email || !endTime) continue;
+
+    var end = parseTime(now, endTime);
+    var lastSentDate = lastSent ? Utilities.formatDate(new Date(lastSent), timezone, "yyyy-MM-dd") : "";
+
+    // Skip if already sent today
+    if (lastSentDate === today) continue;
+
+    // Send only if class has ended
+    if (now >= end) {
+      var sheetName = className + "_" + today;
+      var classSheet = ss.getSheetByName(sheetName);
+      if (!classSheet) continue;
+
+      var csvFile = convertSheetToCsv(classSheet);
+
+      try {
+        Logger.log("📨 Sending auto report for: " + className + " → " + email);
+        MailApp.sendEmail({
+          to: email,
+          subject: "Attendance Report - " + className + " (" + today + ")",
+          body: "Here’s the attendance report for " + className + " (" + today + ").",
+          attachments: [{
+            fileName: className + "_" + today + ".csv",
+            content: csvFile,
+            mimeType: "text/csv"
+          }]
+        });
+
+        managerSheet.getRange(i + 1, 9).setValue(new Date()); // update LastSentDate
+        Logger.log("✅ Email sent successfully for: " + className);
+      } catch (err) {
+        Logger.log("❌ Failed to send email for " + className + ": " + err);
+      }
+    }
+  }
 }
