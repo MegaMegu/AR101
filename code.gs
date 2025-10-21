@@ -36,12 +36,12 @@ function doGet(e) {
   // ✅ Find the active class automatically
   var classInfo = findActiveClass(now);
   if (!classInfo) {
-    return ContentService.createTextOutput("No active class found right now");
+    return ContentService.createTextOutput("No active class|found right now");
   }
 
   // ✅ Check if student is enrolled in this class
   if (!isStudentEnrolled(studentID, classInfo.classID)) {
-    return ContentService.createTextOutput("You are not part of this class");
+    return ContentService.createTextOutput("You are not part|of this class");
   }
 
   // Determine attendance status
@@ -58,20 +58,14 @@ function doGet(e) {
   var data = classSheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === studentID) {
-      classSheet.getRange(i + 1, 3).setValue(currTime); // Time
-      classSheet.getRange(i + 1, 4).setValue(status); // Status
+      classSheet.getRange(i + 1, 3).setValue(currTime);  // Time
+      classSheet.getRange(i + 1, 4).setValue(status);    // Status
       break;
     }
   }
 
   return ContentService.createTextOutput(
-    "Attendance logged: " +
-      studentName +
-      " → " +
-      classInfo.className +
-      " (" +
-      status +
-      ")"
+  studentName + "|" + status
   );
 }
 
@@ -83,26 +77,14 @@ function findActiveClass(now) {
   var today = Utilities.formatDate(now, timezone, "E").toLowerCase();
 
   for (var i = 1; i < classes.length; i++) {
-    var [
-      classId,
-      className,
-      startCell,
-      endCell,
-      days,
-      prof,
-      email,
-      graceMinutes,
-    ] = classes[i];
+    var [classId, className, startCell, endCell, days, prof, email, graceMinutes] = classes[i];
     if (!startCell || !endCell) continue;
 
     var start = parseTime(now, startCell);
     var end = parseTime(now, endCell);
     if (!start || !end) continue;
 
-    var classDays = (days || "")
-      .toLowerCase()
-      .split(/[\/,]/)
-      .map((d) => d.trim());
+    var classDays = (days || "").toLowerCase().split(/[\/,]/).map(d => d.trim());
     if (classDays.includes(today) && now >= start && now <= end) {
       return {
         classID: classId,
@@ -111,7 +93,7 @@ function findActiveClass(now) {
         end: end,
         prof: prof,
         email: email,
-        grace: Number(graceMinutes) || 0,
+        grace: Number(graceMinutes) || 0
       };
     }
   }
@@ -145,8 +127,7 @@ function getStudentName(studentID) {
 function getStudentIdByCard(cardUID) {
   var data = studentSheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][2]).trim() === cardUID) {
-      // Column C = CardUID
+    if (String(data[i][2]).trim() === cardUID) { // Column C = CardUID
       return data[i][0]; // return StudentID
     }
   }
@@ -160,10 +141,7 @@ function isStudentEnrolled(studentID, classID) {
   if (!enrollmentSheet) return false;
   var data = enrollmentSheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
-    if (
-      String(data[i][0]).trim() === studentID &&
-      String(data[i][2]).trim() === classID
-    ) {
+    if (String(data[i][0]).trim() === studentID && String(data[i][2]).trim() === classID) {
       return true;
     }
   }
@@ -239,13 +217,11 @@ function sendAttendanceReport() {
       to: email,
       subject: "Attendance Report - " + className + " (" + today + ")",
       body: "Attached is the attendance report for " + className,
-      attachments: [
-        {
-          fileName: className + "_" + today + ".csv",
-          content: csvFile,
-          mimeType: "text/csv",
-        },
-      ],
+      attachments: [{
+        fileName: className + "_" + today + ".csv",
+        content: csvFile,
+        mimeType: "text/csv"
+      }]
     });
   }
 }
@@ -255,5 +231,5 @@ function sendAttendanceReport() {
 // =========================================================
 function convertSheetToCsv(sheet) {
   var data = sheet.getDataRange().getValues();
-  return data.map((r) => r.join(",")).join("\n");
+  return data.map(r => r.join(",")).join("\n");
 }
