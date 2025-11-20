@@ -8,7 +8,7 @@
 
 // 📌 CONFIGURATION - EDIT THESE
 const char* ssid = "GFiber_2.4_Coverage_6595C";
-const char* password = "BE574178";
+const char* password = "**********";
 
 const char* serverName = "https://script.google.com/macros/s/AKfycbyIcMoIE_ZbEABsjswjcsqFfVqAO2dxKcmwNm88S7e_iC4DrQ70ZM15mCTpKgCb02rR/exec";
 
