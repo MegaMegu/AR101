@@ -191,26 +191,30 @@ function parseTime(baseDate, cellValue) {
 }
 
 // =========================================================
-// 📝 Create Daily Attendance Sheet
+// 📝 Create Daily Attendance Sheet (fixed version)
 // =========================================================
 function createDailyAttendanceSheet(classInfo, dateStr) {
-  var sheetName = classInfo.className + "_" + dateStr;
+  var classID = classInfo.classID;
+  var className = classInfo.className;
+
+  var sheetName = className + "_" + dateStr;
   var sheet = ss.insertSheet(sheetName);
 
   sheet.appendRow(["StudentID", "StudentName", "Time", "Status"]);
 
-  if (!enrollmentSheet) return sheet;
-
   var data = enrollmentSheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][2]).trim() === String(classInfo.classID).trim()) {
+    if (String(data[i][2]).trim() === String(classID).trim()) {
       var studentID = data[i][0];
       var studentName = getStudentName(studentID);
-      sheet.appendRow([studentID, studentName, "", ""]);
+      sheet.appendRow([studentID, studentName, "", "Absent"]); // directly mark absent
     }
   }
+
   return sheet;
 }
+
+
 
 // =========================================================
 // 📧 Manual Attendance Report Sender
@@ -319,4 +323,138 @@ function autoSendAttendanceReports() {
       }
     }
   }
+}
+
+
+function autoArchiveOldSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var allSheets = ss.getSheets();
+  var today = new Date();
+  var currWeek = getWeekNumber(today);
+  var currYear = today.getFullYear();
+
+  var folderId = "1XkHXkmZiLE6el4AuAfE47kPWdFUcIcWt";
+  var archiveFolder = DriveApp.getFolderById(folderId);
+
+  // Loop backwards so deleting sheets doesn’t skip any
+  for (var i = allSheets.length - 1; i >= 0; i--) {
+    var sheet = allSheets[i];
+    var name = sheet.getName();
+
+    // Match sheet names like: ClassName_YYYY-MM-DD
+    var match = name.match(/_(\d{4}-\d{2}-\d{2})$/);
+    if (!match) continue;
+
+    var sheetDate = new Date(match[1]);
+    var sheetWeek = getWeekNumber(sheetDate);
+    var sheetYear = sheetDate.getFullYear();
+
+    // Archive if sheet is from an earlier week or year
+    if (sheetYear < currYear || sheetWeek < currWeek) {
+      try {
+        var csvFile = convertSheetToCsv(sheet);
+        var fileName = name + ".csv";
+
+        // Save CSV to the archive folder
+        archiveFolder.createFile(fileName, csvFile, MimeType.CSV);
+        Logger.log("📦 Archived: " + name);
+
+        // Delete old sheet safely
+        ss.deleteSheet(sheet);
+      } catch (err) {
+        Logger.log("⚠️ Failed to archive " + name + ": " + err);
+      }
+    }
+  }
+}
+
+
+// =========================================================
+// 🟦 Auto-create daily sheet at class start & mark all ABSENT
+// =========================================================
+function autoPrepareDailySheets() {
+  var now = new Date();
+  var todayStr = Utilities.formatDate(now, timezone, "yyyy-MM-dd");
+  var classes = managerSheet.getDataRange().getValues();
+
+  for (var i = 1; i < classes.length; i++) {
+    var [classID, className, startTime, endTime, days] = classes[i];
+    if (!className || !startTime || !days) continue;
+
+    var start = parseTime(now, startTime);
+    if (!start) continue;
+
+    // Only prepare sheet WHEN the time hits start (±1 minute range)
+    var diff = Math.abs(now.getTime() - start.getTime());
+
+    if (diff <= 60000) { // within 1 minute
+      var sheetName = className + "_" + todayStr;
+      var existing = ss.getSheetByName(sheetName);
+
+      if (!existing) {
+        Logger.log("📝 Creating daily sheet early for: " + sheetName);
+        var newSheet = createDailyAttendanceSheet({ classID: classID, className: className },todayStr);
+        markAllAbsent(newSheet);
+      }
+    }
+  }
+}
+
+
+// =========================================================
+// 🚫 Mark all students Absent initially
+// =========================================================
+function markAllAbsent(sheet) {
+  var lastRow = sheet.getLastRow();
+  for (var row = 2; row <= lastRow; row++) {
+    sheet.getRange(row, 4).setValue("Absent");
+  }
+}
+
+
+// Helper: Get ISO week number
+function getWeekNumber(d) {
+  d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  var dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+}
+
+
+function manualArchiveOldAttendanceSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  var today = Utilities.formatDate(new Date(), timezone, "yyyy-MM-dd");
+
+  var folderId = "1XkHXkmZiLE6el4AuAfE47kPWdFUcIcWt";
+  var archiveFolder = DriveApp.getFolderById(folderId);
+
+  var archivedCount = 0;
+
+  for (var i = sheets.length - 1; i >= 0; i--) {
+    var sheet = sheets[i];
+    var name = sheet.getName();
+
+    // Match: ClassName_YYYY-MM-DD
+    var match = name.match(/_(\d{4}-\d{2}-\d{2})$/);
+    if (!match) continue;
+
+    var sheetDate = match[1];
+
+    // Archive only past dates
+    if (sheetDate < today) {
+      try {
+        var csv = convertSheetToCsv(sheet);
+        archiveFolder.createFile(name + ".csv", csv, MimeType.CSV);
+        ss.deleteSheet(sheet);
+        archivedCount++;
+        Logger.log("📦 Archived: " + name);
+      } catch (err) {
+        Logger.log("❌ Failed to archive " + name + ": " + err);
+      }
+    }
+  }
+
+  Logger.log("✅ Manual archive finished. Total archived: " + archivedCount);
 }
